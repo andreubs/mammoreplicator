@@ -23,33 +23,34 @@ print '\n** "mammoreplicator": Replicating 2D mammograms with 3D printed surroga
 print '                                               [Andreu Badal, 2015-07-10]\n'
 
 print ' Reading input data...'
-image_file_name = "TG18-MM-2k-01.dcm"
-compression_thickness    = 5.0    # cm
-average_breast_intensity = 700
 
-output_binning  = 8               # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
-subtract_layer = 2.0
+image_file_name = "000000_AOJB_Dig_Raw_Copy_V0.dcm"
+compression_thickness    = 6.7    # cm
+average_breast_intensity = 750
+air_intensity            = 16383     # Pixel value outside the breast (air attenuation only)      Matthew Clark 
+
+output_binning  = 4               # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
+subtract_layer = 1.5 #3.3
 output_dcm = 0     # 1==true, 0==false->do not output dicom file with thickness
 output_mm  = 1     # 1==true, 0==false->output triangles in cm
 
-rows       = [0,2048] 
-columns    = [0,2048] 
+rows       = [0,2294] 
+columns    = [0,1914] 
+
+pixel_size      = 0.00941 # cm     # Desired pixel size in the printed phantom
+mfp_breast      = 1.284   # cm     # 16.5keV=1.284cm, 20keV=1.933cm;      // Molybdenum target, 28 kVp -> average energy 16.5 keV
+mfp_plastic     = 1.0     # cm  --> wild estimation assuming some combination of PMMA and TiO2 in the stereolithogaphy substrate                !!STL!!   
+    #mfp_plastic     = 0.863  # cm     # 16.5keV=0.863cm, 20keV=1.315cm
+
 
 num_rows   = int((rows[1]-rows[0])/output_binning)*output_binning         # Processed sizwe will be a multiple of binning value 
 num_columns= int((columns[1]-columns[0])/output_binning)*output_binning
 rows[1]    = rows[0]+num_rows
 columns[1] = columns[0]+num_columns
-center_pixel    = array([num_columns/2,num_rows])      # Location x-ray field of view center in pixel units [x,y]=[Row,Column]
-center_coord    = array([0.0,0.0, 0.0])  # Location x-ray field of view center in cm (printed phantom origin)
-source_coord    = array([0.0,0.0,80.0])  # Location x-ray source focal spot. Using NUMPY arrays for calculations.
-pixel_size      = 0.0070 # cm     # Desired pixel size in the printed phantom
 
-mfp_breast      = 1.284  # cm     # 16.5keV=1.284cm, 20keV=1.933cm;      // Molybdenum target, 28 kVp -> average energy 16.5 keV
-
-
-#mfp_plastic     = 0.863  # cm     # 16.5keV=0.863cm, 20keV=1.315cm
-mfp_plastic     = 1.0;  # cm  --> wild estimation assuming some combination of PMMA and TiO2 in the stereolithogaphy substrate                !!STL!!   
-
+center_pixel    = array([0,0])   #([num_columns/2,num_rows])      # Location x-ray field of view center in pixel units [x,y]=[Row,Column]
+center_coord    = array([0.0, 0.0, 0.0])  # Location x-ray field of view center in cm (printed phantom origin)
+source_coord    = array([0.0, rows[1]*0.5*pixel_size, 66.0])  # Location x-ray source focal spot. Using NUMPY arrays for calculations.
 
 air_threshold   = 0   #!!DeBuG!! Currently not removing air pixels: drawing 0 height columns instead       # Any pixel below this threshold will be considered air and asigned 0 thickness    
 
@@ -82,8 +83,9 @@ disp( ' Current row: ', linefeed=False)          # (disable new line at end of m
 pix = numpy.zeros((rows[1], columns[1]))        # We will work on this copy of the data as floats, init to 0
 num_air_pix = 0
 
-
-conversion_factor = (compression_thickness/log(float(average_breast_intensity))) * (mfp_plastic/mfp_breast)           #   !!DeBuG!! Linearity assumption
+conversion_factor = (compression_thickness/log(float(average_breast_intensity/float(air_intensity)))) * (mfp_plastic/mfp_breast) 
+# Test1:    conversion_factor = (compression_thickness*log(float(average_breast_intensity))) * (mfp_plastic/mfp_breast)           #   Matthew Clark operation change 7/15/2015
+# Original: conversion_factor = (compression_thickness/log(float(average_breast_intensity))) * (mfp_plastic/mfp_breast) 
 
 for j in range(rows[0], rows[1], output_binning):
   disp(j, linefeed=False); disp(', ', linefeed=False)  
@@ -105,7 +107,11 @@ for j in range(rows[0], rows[1], output_binning):
     else:  
 
       if (mammo.pixel_array[j][i]>1):
-        pix[j][i] = log(float(mammo.pixel_array[j][i])) * conversion_factor    #!!DeBuG!! Calculate log of image?
+	  
+	  
+	    pix[j][i] = conversion_factor * log(float(mammo.pixel_array[j][i])/float(air_intensity))    #Inverted operation matt clark
+        # Test 1:   pix[j][i] = conversion_factor/log(float(mammo.pixel_array[j][i]))    #Inverted operation matt clark
+		# Original: pix[j][i] = log(float(mammo.pixel_array[j][i])) * conversion_factor  
       else:
         pix[j][i] = 0
 
@@ -138,7 +144,7 @@ if (subtract_layer>0.00001):
   image_file_name2 = image_file_name2+"_-"+str(subtract_layer)+"cm"
 if (output_mm==1):
   image_file_name2 = image_file_name2+"_mm"
-image_file_name2 = image_file_name2+".ply"
+image_file_name2 = image_file_name2+"_inverseNorm2.ply" #Matt clark inverse
 
 ply = open(image_file_name2, 'w')  # Create PLY file and write header:
 
@@ -250,7 +256,3 @@ for n in range(0, num_binned_pixels):
   
 ply.write(str(n)+'\n')
 ply.close()
-
-print '\n\n Done!\n'
-
-
