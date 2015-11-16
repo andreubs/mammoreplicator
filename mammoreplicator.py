@@ -11,8 +11,10 @@
     # Code adapted for faster execution with pypy just-in-time compilation    !!PYPY!!  [AB, 2015-11-16]
     # Importing "numpypy" instead of "numpypy". The "dicom" package setup file has to be recompiled with pypy
 
+#NOTE:To disable PYPY execution and use the standard python and numpy, comment next line and uncomment following: 
 import numpypy
-from numpypy import zeros, array
+#import numpy as numpypy     # Not using pypy
+
 import time
 import math
 from math import log, sqrt
