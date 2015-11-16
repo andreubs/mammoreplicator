@@ -8,17 +8,22 @@
 #
 #
 
-# Code adapted for faster execution with pypy just-in-time compilation    !!pypy!!i  [AB, 2015-11-16]
+    # Code adapted for faster execution with pypy just-in-time compilation    !!PYPY!!  [AB, 2015-11-16]
+    # Importing "numpypy" instead of "numpypy". The "dicom" package setup file has to be recompiled with pypy
 
-import numpy
-from numpy import *
+import numpypy
+from numpypy import zeros, array
 import time
+import math
+from math import log, sqrt
+import sys
 
-#   Instal DICOM reader for Python: http://www.pydicom.org/ (just run ez_setup.py as root)
+#   Instal DICOM reader for Python: http://www.pydicom.org/ (just run ez_setup.py as root). Compiled with PYPY
 import dicom
 
-def str4(n):
-  return "{0:.4f}".format(n)   # Simple function to convert a float into a string with 4 decimal places
+# Simple function to convert a float into a string with 4 decimal places (problem: 0.0 becomes 0.0000):
+#def str4(n):
+  #return "{0:.4f}".format(float(n))
 
 
 # Input data:
@@ -27,7 +32,7 @@ print '                                               [Andreu Badal, 2015-07-10]
 
 print ' Reading input data...'
 
-image_file_name = "000000_AOJB_Dig_Raw_Copy_V0.dcm"
+image_file_name = "../000000_AOJB_Dig_Raw_Copy_V0.dcm"
 compression_thickness    = 6.7    # cm
 average_breast_intensity = 750
 air_intensity            = 16383     # Pixel value outside the breast (air attenuation only)      Matthew Clark 
@@ -52,9 +57,9 @@ num_columns= int((columns[1]-columns[0])/output_binning)*output_binning
 rows[1]    = rows[0]+num_rows
 columns[1] = columns[0]+num_columns
 
-center_pixel    = array([0,0])   #([num_columns/2,num_rows])      # Location x-ray field of view center in pixel units [x,y]=[Row,Column]
-center_coord    = array([0.0, 0.0, 0.0])  # Location x-ray field of view center in cm (printed phantom origin)
-source_coord    = array([0.0, rows[1]*0.5*pixel_size, 66.0])  # Location x-ray source focal spot. Using NUMPY arrays for calculations.
+center_pixel    = numpypy.array([0,0])   #([num_columns/2,num_rows])      # Location x-ray field of view center in pixel units [x,y]=[Row,Column]
+center_coord    = numpypy.array([0.0, 0.0, 0.0])  # Location x-ray field of view center in cm (printed phantom origin)
+source_coord    = numpypy.array([0.0, rows[1]*0.5*pixel_size, 66.0])  # Location x-ray source focal spot. Using NUMPY arrays for calculations.
 
 air_threshold   = 0   #!!DeBuG!! Currently not removing air pixels: drawing 0 height columns instead       # Any pixel below this threshold will be considered air and asigned 0 thickness    
 
@@ -87,8 +92,8 @@ mammo = dicom.read_file(image_file_name)
 
 # Process pixel values:
 print '\n Processing pixel values; rows = ',num_rows,', columns = ',num_columns,'...'
-disp( ' Current row: ', linefeed=False)          # (disable new line at end of message)
-pix = numpy.zeros((rows[1], columns[1]))        # We will work on this copy of the data as floats, init to 0
+sys.stdout.write(' Current row: ');               # Used instead of print bc no new line added after text
+pix = numpypy.zeros((rows[1], columns[1]))        # We will work on this copy of the data as floats, init to 0
 num_air_pix = 0
 
 conversion_factor = (compression_thickness/log(float(average_breast_intensity/float(air_intensity)))) * (mfp_plastic/mfp_breast) 
@@ -96,7 +101,7 @@ conversion_factor = (compression_thickness/log(float(average_breast_intensity/fl
 # Original: conversion_factor = (compression_thickness/log(float(average_breast_intensity))) * (mfp_plastic/mfp_breast) 
 
 for j in range(rows[0], rows[1], output_binning):
-  disp(j, linefeed=False); disp(', ', linefeed=False)  
+  sys.stdout.write(str(j)+', '); sys.stdout.flush()
   for i in range(columns[0], columns[1], output_binning):
   
     # If requested, re-bin the output to reduce the print resolution (1=no-binning, 2=average_4pixels...):
@@ -130,7 +135,9 @@ for j in range(rows[0], rows[1], output_binning):
       for k1 in range(0, output_binning):
         for k2 in range(0, output_binning):      
           mammo.pixel_array[j+k1][i+k2] = bin_value
-
+          
+sys.stdout.write('\n'); sys.stdout.flush()
+  
 if (output_dcm==1):  
   # Save final data as dicom:      help(dicom.write_file)  
   print '\n\n Saving final data as DICOM image in integer units of tenths of mm of plastic...'
@@ -156,7 +163,8 @@ if (subtract_layer>0.00001):
   image_file_name2 = image_file_name2+"_-"+str(subtract_layer)+"cm"
 if (output_mm==1):
   image_file_name2 = image_file_name2+"_mm"
-image_file_name2 = image_file_name2+".ply"
+
+image_file_name2 = image_file_name2+"_pypy.ply"  # !!PYPY!! 
 
 print '\n -- Writing ',num_triangles,' triangles to output file: '+image_file_name2+'\n'
 
@@ -196,18 +204,18 @@ ply.write('element face '+str(num_triangles)+'\n')
 ply.write('property list uchar int vertex_index\n')
 ply.write('end_header\n')
 
-disp( ' Current row: ', linefeed=False)          # (disable new line at end of message)
+sys.stdout.write(' Current row: ')
 
 for j in range(rows[0], rows[1], output_binning):
-  disp(j, linefeed=False); disp(', ', linefeed=False)  
+  sys.stdout.write(str(j)+', '); sys.stdout.flush()
   for i in range(columns[0], columns[1], output_binning):    
 
     if pix[j][i]>-999990.01:     # Skip air pixels
       # Define vectors:
-      r0 = numpy.zeros(3)
-      #r1 = numpy.zeros(3)
-      d  = numpy.zeros(3)
-      vertices = numpy.zeros((8,3))
+      r0 = numpypy.zeros(3)
+      #r1 = numpypy.zeros(3)
+      d  = numpypy.zeros(3)
+      vertices = numpypy.zeros((8,3))
       offset = 0.5*pixel_size*output_binning
       offset0 = array([+offset,+offset,0.0])      #  3 ----- 0   (vertex order clockwise)
       offset1 = array([+offset,-offset,0.0])      #    - c -
@@ -226,26 +234,33 @@ for j in range(rows[0], rows[1], output_binning):
       vertices[3] = r0 + offset3
       
       # - Shorten object for printing (and make sure all pixels are 0 or more):
-      pix[j][i] = max(pix[j][i] - subtract_layer, 0.0)
+      pix[j][i] = pix[j][i] - subtract_layer    # !!PYPY!! Old: pix[j][i] = max(pix[j][i] - subtract_layer, 0.0)
+      if (pix[j][i] < 0):
+        pix[j][i] = 0
 
       d = source_coord-vertices[0]    # 4 vertices at the top focused to the source: calculate mormalized direction vector for each vertex
-      vertices[4] = vertices[0] + pix[j][i]*d/numpy.linalg.norm(d)
+      norm = sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2])    # !!PYPY!! Not using function: numpypy.linalg.norm(d)
+      vertices[4] = vertices[0] + pix[j][i]*d/norm
       d = source_coord-vertices[1]
-      vertices[5] = vertices[1] + pix[j][i]*d/numpy.linalg.norm(d)
+      norm = sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2])
+      vertices[5] = vertices[1] + pix[j][i]*d/norm
       d = source_coord-vertices[2]
-      vertices[6] = vertices[2] + pix[j][i]*d/numpy.linalg.norm(d)
+      norm = sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2])
+      vertices[6] = vertices[2] + pix[j][i]*d/norm
       d = source_coord-vertices[3]
-      vertices[7] = vertices[3] + pix[j][i]*d/numpy.linalg.norm(d)      
+      norm = sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2])
+      vertices[7] = vertices[3] + pix[j][i]*d/norm
 
       # Write vertices coordinates:
       for n in range(0, 8):
         
         if (output_mm==1):
-          ply.write(str4(10.0*vertices[n][0])+' '+str4(10.0*vertices[n][1])+' '+str4(10.0*vertices[n][2])+'\n')  # Outputing mesh in mm
+          ply.write(str(10.0*vertices[n][0])+' '+str(10.0*vertices[n][1])+' '+str(10.0*vertices[n][2])+'\n')  # Outputing mesh in mm
         else:
-          ply.write(str4(vertices[n][0])+' '+str4(vertices[n][1])+' '+str4(vertices[n][2])+'\n')                 # Outputing mesh in cm
+          ply.write(str(vertices[n][0])+' '+str(vertices[n][1])+' '+str(vertices[n][2])+'\n')                 # Outputing mesh in cm
     
-    
+sys.stdout.write('\n'); sys.stdout.flush()
+
 # Write triangles in the 6 sides of each printed column giving groups of 3 vertices:
 for n in range(0, num_binned_pixels):
 
