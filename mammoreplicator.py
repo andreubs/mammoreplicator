@@ -8,6 +8,8 @@
 #
 #
 
+# Code adapted for faster execution with pypy just-in-time compilation    !!pypy!!i  [AB, 2015-11-16]
+
 import numpy
 from numpy import *
 import time
