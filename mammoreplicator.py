@@ -11,8 +11,12 @@
     # Code adapted for faster execution with pypy just-in-time compilation    !!PYPY!!  [AB, 2015-11-16]
     # Importing "numpypy" instead of "numpypy". The "dicom" package setup file has to be recompiled with pypy
 
-import numpypy
-from numpypy import zeros, array
+    # Water filled phantom: combine plastic and water to speed up print and reduce artifacts.  !!WATER!!  [AB, 2015-11-16]
+
+#NOTE:To disable PYPY execution and use the standard python and numpy, comment next line and uncomment following: 
+import numpypy; from numpypy import zeros, array
+#import numpy as numpypy; from numpy import zeros, array     # Not using pypy
+
 import time
 import math
 from math import log, sqrt
@@ -37,18 +41,19 @@ compression_thickness    = 6.7    # cm
 average_breast_intensity = 750
 air_intensity            = 16383     # Pixel value outside the breast (air attenuation only)      Matthew Clark 
 
-output_binning = 8               # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
+output_binning = 16               # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
 subtract_layer = 0.0 # cm
-output_dcm = 0     # 1==true, 0==false->do not output dicom file with thickness
+output_dcm = 1     # 1==true, 0==false->do not output dicom file with thickness
 output_mm  = 1     # 1==true, 0==false->output triangles in cm
 output_base= 1     # 1==true, 0==false->add a flat support at the base of the object to define a solid object, or output just an empty 2D shell
 
 rows       = [0,2294] 
 columns    = [0,1914] 
 
-pixel_size      = 0.00941 # cm     # Desired pixel size in the printed phantom
+pixel_size      = 0.0100  # cm  Real pixel size: 0.00941 cm     # Desired pixel size in the printed phantom
 mfp_breast      = 1.284   # cm     # 16.5keV=1.284cm, 20keV=1.933cm;      // Molybdenum target, 28 kVp -> average energy 16.5 keV
-mfp_plastic     = 1.0     # cm
+mfp_plastic     = 1.429   # cm  = 1/0.7 -> Approx ABS MFP at 16.5keV
+  #mfp_plastic = 1.0  # cm -> Approx SLA polymer MFP
   #mfp_plastic = (1.0/21.47) # cm  <-- Aluminum, 15 keV; attenuation coeff. http://physics.nist.gov/PhysRefData/XrayMassCoef/ElemTab/z13.html (density=2.699g/cm3)
   #mfp_plastic = 0.863  # cm     # 16.5keV=0.863cm, 20keV=1.315cm
 
@@ -142,7 +147,7 @@ if (output_dcm==1):
   # Save final data as dicom:      help(dicom.write_file)  
   print '\n\n Saving final data as DICOM image in integer units of tenths of mm of plastic...'
   mammo.PixelData = mammo.pixel_array.tostring()   # Save the data array into the actual pixel data string
-  #dicom.write_file(image_file_name+"_plastic_bin"+str(output_binning)+".dcm", mammo)
+  
   
   dicom.write_file(image_file_name+"_bin"+str(output_binning)+".dcm", mammo)
 
@@ -164,7 +169,7 @@ if (subtract_layer>0.00001):
 if (output_mm==1):
   image_file_name2 = image_file_name2+"_mm"
 
-image_file_name2 = image_file_name2+"_pypy.ply"  # !!PYPY!! 
+image_file_name2 = image_file_name2+".ply"
 
 print '\n -- Writing ',num_triangles,' triangles to output file: '+image_file_name2+'\n'
 
