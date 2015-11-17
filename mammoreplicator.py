@@ -144,7 +144,6 @@ if (output_dcm==1):
   # Save final data as dicom:      help(dicom.write_file)  
   print '\n\n Saving final data as DICOM image in integer units of tenths of mm of plastic...'
   mammo.PixelData = mammo.pixel_array.tostring()   # Save the data array into the actual pixel data string
-  #dicom.write_file(image_file_name+"_plastic_bin"+str(output_binning)+".dcm", mammo)
   
   dicom.write_file(image_file_name+"_bin"+str(output_binning)+".dcm", mammo)
 
@@ -166,7 +165,7 @@ if (subtract_layer>0.00001):
 if (output_mm==1):
   image_file_name2 = image_file_name2+"_mm"
 
-image_file_name2 = image_file_name2+"_pypy.ply"  # !!PYPY!! 
+image_file_name2 = image_file_name2+".ply"
 
 print '\n -- Writing ',num_triangles,' triangles to output file: '+image_file_name2+'\n'
 
