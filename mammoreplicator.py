@@ -41,11 +41,11 @@ compression_thickness    = 6.7    # cm
 average_breast_intensity = 750
 air_intensity            = 16383     # Pixel value outside the breast (air attenuation only)      Matthew Clark 
 
-output_binning = 16               # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
+output_binning = 8               # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
 subtract_layer = 0.0 # cm
-output_dcm = 1     # 1==true, 0==false->do not output dicom file with thickness
+output_dcm = 0     # 1==true, 0==false->do not output dicom file with thickness
 output_mm  = 1     # 1==true, 0==false->output triangles in cm
-output_base= 1     # 1==true, 0==false->add a flat support at the base of the object to define a solid object, or output just an empty 2D shell
+output_base= 0     # 1==true, 0==false->add a flat support at the base of the object to define a solid object, or output just an empty 2D shell
 
 rows       = [0,2294] 
 columns    = [0,1914] 
@@ -148,7 +148,6 @@ if (output_dcm==1):
   print '\n\n Saving final data as DICOM image in integer units of tenths of mm of plastic...'
   mammo.PixelData = mammo.pixel_array.tostring()   # Save the data array into the actual pixel data string
   
-  
   dicom.write_file(image_file_name+"_bin"+str(output_binning)+".dcm", mammo)
 
 
@@ -242,6 +241,37 @@ for j in range(rows[0], rows[1], output_binning):
       pix[j][i] = pix[j][i] - subtract_layer    # !!PYPY!! Old: pix[j][i] = max(pix[j][i] - subtract_layer, 0.0)
       if (pix[j][i] < 0):
         pix[j][i] = 0
+
+
+
+
+
+      # - Create a container for water in the middle of the phantom. Water attenuates more than ABS!        #!!WaterFill!!
+      min_height = 4.0
+      border_cm  = 0.5  # cm
+      border_pixels = output_binning * int(border_cm/(pixel_size*output_binning) + 0.5)   # convert cm into pixels
+      
+      if (pix[j][i] > min_height):   # Check minimum height
+        if (j>=rows[0]+border_pixels)&(i>=columns[0]+border_pixels)&(j<rows[1]-border_pixels)&(i<columns[1]-border_pixels):    # Check pixel interval
+          if (pix[j+border_pixels][i+border_pixels]>0.1):
+            if (pix[j-border_pixels][i+border_pixels]>0.1):
+              if (pix[j+border_pixels][i-border_pixels]>0.1):
+                if (pix[j-border_pixels][i-border_pixels]>0.1):   # Check if not in periphery
+                  # - Process internal pixels:
+                  height_water_fill = 4.0 # cm
+                  mfp_water = 0.7675         # cm at 16.5 keV
+                  
+                  #pix_tmp = pix[j][i]              #!!DeBuG!!
+                  pix[j][i] = ( height_water_fill/0.7675 - pix[j][i]/mfp_plastic ) / ( 1.0/mfp_water - 1.0/mfp_plastic )    # Compute new pixel plastic height assuming filled with water to height_water_fill
+                  #print str(pix_tmp) + "->" + str(pix[j][i])  #!!DeBuG!!
+
+      if(j==rows[1]/2)&(i==columns[1]/2):          #!!DeBuG!!
+      #if (pix[j][i] > min_height):   # Check minimum height
+        print "min_height: " + str(min_height)
+        print "border_pixels: " + str(border_pixels)
+        print "pix["+str(j)+"]["+str(i)+"] = " + str(pix[j][i])
+        
+      
 
       d = source_coord-vertices[0]    # 4 vertices at the top focused to the source: calculate mormalized direction vector for each vertex
       norm = sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2])    # !!PYPY!! Not using function: numpypy.linalg.norm(d)
