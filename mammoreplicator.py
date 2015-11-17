@@ -11,7 +11,7 @@
     # Code adapted for faster execution with pypy just-in-time compilation    !!PYPY!!  [AB, 2015-11-16]
     # Importing "numpypy" instead of "numpypy". The "dicom" package setup file has to be recompiled with pypy
 
-    # Water filled phantom: combine plastic and water to speed up print and reduce artifacts.  !!WATER!!  [AB, 2015-11-16]
+    # Water filled phantom: combine plastic and water to speed up print and reduce artifacts.  !!WaterFill!!  [AB, 2015-11-16]
 
 #NOTE:To disable PYPY execution and use the standard python and numpy, comment next line and uncomment following: 
 import numpypy; from numpypy import zeros, array
@@ -19,7 +19,7 @@ import numpypy; from numpypy import zeros, array
 
 import time
 import math
-from math import log, sqrt
+from math import log, sqrt, exp
 import sys
 
 #   Instal DICOM reader for Python: http://www.pydicom.org/ (just run ez_setup.py as root). Compiled with PYPY
@@ -36,19 +36,19 @@ print '                                               [Andreu Badal, 2015-07-10]
 
 print ' Reading input data...'
 
-image_file_name = "../000000_AOJB_Dig_Raw_Copy_V0.dcm"
-compression_thickness    = 6.7    # cm
-average_breast_intensity = 750
+image_file_name = "../CancerImaging_TCGA-BRCA_TCGA-AO-A0JI_Raw_0.dcm"
+compression_thickness    = 6.0    # cm
+average_breast_intensity = 1400   #750
 air_intensity            = 16383     # Pixel value outside the breast (air attenuation only)      Matthew Clark 
 
-output_binning = 8               # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
+output_binning = 5               # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
 subtract_layer = 0.0 # cm
 output_dcm = 0     # 1==true, 0==false->do not output dicom file with thickness
 output_mm  = 1     # 1==true, 0==false->output triangles in cm
-output_base= 0     # 1==true, 0==false->add a flat support at the base of the object to define a solid object, or output just an empty 2D shell
+output_base= 1     # 1==true, 0==false->add a flat support at the base of the object to define a solid object, or output just an empty 2D shell
 
 rows       = [0,2294] 
-columns    = [0,1914] 
+columns    = [0, 800]    # [0,1914]  
 
 pixel_size      = 0.0100  # cm  Real pixel size: 0.00941 cm     # Desired pixel size in the printed phantom
 mfp_breast      = 1.284   # cm     # 16.5keV=1.284cm, 20keV=1.933cm;      // Molybdenum target, 28 kVp -> average energy 16.5 keV
@@ -146,7 +146,7 @@ sys.stdout.write('\n'); sys.stdout.flush()
 if (output_dcm==1):  
   # Save final data as dicom:      help(dicom.write_file)  
   print '\n\n Saving final data as DICOM image in integer units of tenths of mm of plastic...'
-  mammo.PixelData = mammo.pixel_array.tostring()   # Save the data array into the actual pixel data string
+  mammo.PixelData = mammo.pixel_array.tostring()   # Save the data array into the actual pixel data string    !!DeBuG!! "tostring" is not implemented yet in numpypy!! Dicom output will only work with regular python
   
   dicom.write_file(image_file_name+"_bin"+str(output_binning)+".dcm", mammo)
 
@@ -168,7 +168,7 @@ if (subtract_layer>0.00001):
 if (output_mm==1):
   image_file_name2 = image_file_name2+"_mm"
 
-image_file_name2 = image_file_name2+".ply"
+image_file_name2 = image_file_name2+"_WaterFill.ply"      # !!WaterFill!!
 
 print '\n -- Writing ',num_triangles,' triangles to output file: '+image_file_name2+'\n'
 
@@ -200,6 +200,23 @@ ply.write('comment          output_base    = ' +str(output_base)+'\n')
 ply.write('comment          binned columns = ' +str(num_columns/output_binning)+", binned rows = "+str(num_rows/output_binning)+'\n')
 ply.write('comment \n')
 
+
+
+# -- Input variables for the water fill:        !!WaterFill!!  
+height_water_fill = 4.3 # cm
+min_height = 4.5
+border_cm  = 0.4  # cm
+mfp_water  = 0.7675         # cm at 16.5 keV      
+
+border_pixels = output_binning * int(border_cm/(pixel_size*output_binning) + 0.5)   # convert cm into pixels
+pix_max=0.01; pix_max_water=0.0; i_max=0; j_max=0; pix_counter=0; volume_subtracted=0.0; volume_kept=0.0
+ply.write('comment     !!WaterFill!!\n')
+ply.write('comment         height_water_fill = '+str(height_water_fill)+' cm, min_height = '+str(min_height)+' cm, border = '+str(border_cm)+' cm\n')   #!!WaterFill!!  
+ply.write('comment         mfp_water = ' +str(mfp_water)+' cm\n')
+
+
+
+ply.write('comment \n')
 ply.write('element vertex '+str(num_vertices)+'\n')
 ply.write('property float x\n')
 ply.write('property float y\n')
@@ -246,32 +263,25 @@ for j in range(rows[0], rows[1], output_binning):
 
 
 
-      # - Create a container for water in the middle of the phantom. Water attenuates more than ABS!        #!!WaterFill!!
-      min_height = 4.0
-      border_cm  = 0.5  # cm
-      border_pixels = output_binning * int(border_cm/(pixel_size*output_binning) + 0.5)   # convert cm into pixels
-      
+      # - Create a container for water in the middle of the phantom. Water attenuates more than ABS!                 #!!WaterFill!!      
       if (pix[j][i] > min_height):   # Check minimum height
         if (j>=rows[0]+border_pixels)&(i>=columns[0]+border_pixels)&(j<rows[1]-border_pixels)&(i<columns[1]-border_pixels):    # Check pixel interval
           if (pix[j+border_pixels][i+border_pixels]>0.1):
             if (pix[j-border_pixels][i+border_pixels]>0.1):
               if (pix[j+border_pixels][i-border_pixels]>0.1):
                 if (pix[j-border_pixels][i-border_pixels]>0.1):   # Check if not in periphery
-                  # - Process internal pixels:
-                  height_water_fill = 4.0 # cm
-                  mfp_water = 0.7675         # cm at 16.5 keV
+                  # - Process internal pixels:                 
+                  pix_tmp = pix[j][i]
+                  pix[j][i] = ( height_water_fill/0.7675 - pix[j][i]/mfp_plastic ) / ( 1.0/mfp_water - 1.0/mfp_plastic )    # Compute new pixel plastic height assuming filled with water to height_water_fill   !!WaterFill!!
                   
-                  #pix_tmp = pix[j][i]              #!!DeBuG!!
-                  pix[j][i] = ( height_water_fill/0.7675 - pix[j][i]/mfp_plastic ) / ( 1.0/mfp_water - 1.0/mfp_plastic )    # Compute new pixel plastic height assuming filled with water to height_water_fill
-                  #print str(pix_tmp) + "->" + str(pix[j][i])  #!!DeBuG!!
+                  pix_counter=pix_counter+1
+                  volume_subtracted=volume_subtracted+pix_tmp-pix[j][i]
+                  volume_kept=volume_kept+pix[j][i]
+                  if (pix_tmp>pix_max):
+                    pix_max = pix_tmp; pix_max_water = pix[j][i]; i_max = i; j_max = j   # Store thickest plastic pixel to report
+                    #print str(pix_tmp) + "->" + str(pix[j][i])  #!!DeBuG!!
 
-      if(j==rows[1]/2)&(i==columns[1]/2):          #!!DeBuG!!
-      #if (pix[j][i] > min_height):   # Check minimum height
-        print "min_height: " + str(min_height)
-        print "border_pixels: " + str(border_pixels)
-        print "pix["+str(j)+"]["+str(i)+"] = " + str(pix[j][i])
-        
-      
+
 
       d = source_coord-vertices[0]    # 4 vertices at the top focused to the source: calculate mormalized direction vector for each vertex
       norm = sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2])    # !!PYPY!! Not using function: numpypy.linalg.norm(d)
@@ -295,6 +305,20 @@ for j in range(rows[0], rows[1], output_binning):
           ply.write(str(vertices[n][0])+' '+str(vertices[n][1])+' '+str(vertices[n][2])+'\n')                 # Outputing mesh in cm
     
 sys.stdout.write('\n'); sys.stdout.flush()
+
+
+# -- Report info on water fill:           !!WaterFill!!
+if(pix_max>0.02):
+  pixel_area=(pixel_size*output_binning)*(pixel_size*output_binning)
+  print "\n!!WaterFill!!  Input:  height_water_fill="+str(height_water_fill)+", min_height=" + str(min_height) + ", border_pixels=" + str(border_pixels) + ", mfp_water=" + str(mfp_water)  + ", mfp_plastic=" + str(mfp_plastic)
+  print "               Number pixels transformed = "+str(pix_counter)+" = "+str(pix_counter*pixel_area)+" cm^2. Plastic volume = "+str(volume_kept*pixel_area)+", Water volume = "+str((height_water_fill*pix_counter-volume_kept)*pixel_area)+", Volume saved = "+str(volume_subtracted*pixel_area)+" cm^3"
+  print "               Original plastic pix_max = "+str(pix_max)+" cm, plastic thickness with water = pix["+str(j_max)+"]["+str(i_max)+"] = "+str(pix[j_max][i_max])
+  print "               exp(-pix_max/mfp_plastic) = "+str(exp(-pix_max/mfp_plastic))+", exp(-pix/mfp_plastic-(height_water_fill-pix)/mfp_water)="+str(exp(-pix[j_max][i_max]/mfp_plastic-(height_water_fill-pix[j_max][i_max])/mfp_water))
+  
+  if(pix[j_max][i_max]<0):
+    print "\n***WARNING*** The water subtraction failed: input plast/water thicknesses not posible.   !!WaterFill!!\n\n"
+  
+
 
 # Write triangles in the 6 sides of each printed column giving groups of 3 vertices:
 for n in range(0, num_binned_pixels):
