@@ -64,7 +64,7 @@ columns[1] = columns[0]+num_columns
 
 center_pixel    = numpypy.array([0,0])   #([num_columns/2,num_rows])      # Location x-ray field of view center in pixel units [x,y]=[Row,Column]
 center_coord    = numpypy.array([0.0, 0.0, 0.0])  # Location x-ray field of view center in cm (printed phantom origin)
-source_coord    = numpypy.array([0.0, rows[1]*0.5*pixel_size, 66.0])  # Location x-ray source focal spot. Using NUMPY arrays for calculations.
+source_coord    = numpypy.array([0.0, (rows[0]+(rows[1]-rows[0])*0.5)*pixel_size, 66.0])  # Location x-ray source focal spot. Using NUMPY arrays for calculations.
 
 air_threshold   = 0   #!!DeBuG!! Currently not removing air pixels: drawing 0 height columns instead       # Any pixel below this threshold will be considered air and asigned 0 thickness    
 
