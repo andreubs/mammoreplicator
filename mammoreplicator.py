@@ -38,7 +38,7 @@ print ' Reading input data...'
 
 image_file_name = "../CancerImaging_TCGA-BRCA_TCGA-AO-A0JI_Raw_0.dcm"
 compression_thickness    = 6.0    # cm
-average_breast_intensity = 1400   #750
+average_breast_intensity = 1400
 air_intensity            = 16383     # Pixel value outside the breast (air attenuation only)      Matthew Clark 
 
 output_binning = 5               # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
@@ -56,6 +56,17 @@ mfp_plastic     = 1.429   # cm  = 1/0.7 -> Approx ABS MFP at 16.5keV
   #mfp_plastic = 1.0  # cm -> Approx SLA polymer MFP
   #mfp_plastic = (1.0/21.47) # cm  <-- Aluminum, 15 keV; attenuation coeff. http://physics.nist.gov/PhysRefData/XrayMassCoef/ElemTab/z13.html (density=2.699g/cm3)
   #mfp_plastic = 0.863  # cm     # 16.5keV=0.863cm, 20keV=1.315cm
+  
+source_height_Z = 66.0   # cm
+
+
+# -- Input variables for the water fill:        !!WaterFill!!  
+#    If "min_height>50" water fill is completely disabled.
+min_height = 4.5        # cm
+height_water_fill = 4.3 # cm
+border_cm  = 0.4        # cm
+mfp_water  = 0.7675     # cm at 16.5 keV      
+  
 
 num_rows   = int((rows[1]-rows[0])/output_binning)*output_binning         # Processed sizwe will be a multiple of binning value 
 num_columns= int((columns[1]-columns[0])/output_binning)*output_binning
@@ -64,7 +75,7 @@ columns[1] = columns[0]+num_columns
 
 center_pixel    = numpypy.array([0,0])   #([num_columns/2,num_rows])      # Location x-ray field of view center in pixel units [x,y]=[Row,Column]
 center_coord    = numpypy.array([0.0, 0.0, 0.0])  # Location x-ray field of view center in cm (printed phantom origin)
-source_coord    = numpypy.array([0.0, (rows[0]+(rows[1]-rows[0])*0.5)*pixel_size, 66.0])  # Location x-ray source focal spot. Using NUMPY arrays for calculations.
+source_coord    = numpypy.array([0.0, (rows[0]+(rows[1]-rows[0])*0.5)*pixel_size, source_height_Z])  # Location x-ray source focal spot. Using NUMPY arrays for calculations.
 
 air_threshold   = 0   #!!DeBuG!! Currently not removing air pixels: drawing 0 height columns instead       # Any pixel below this threshold will be considered air and asigned 0 thickness    
 
@@ -168,7 +179,10 @@ if (subtract_layer>0.00001):
 if (output_mm==1):
   image_file_name2 = image_file_name2+"_mm"
 
-image_file_name2 = image_file_name2+"_WaterFill.ply"      # !!WaterFill!!
+if (min_height<50.0):
+  image_file_name2 = image_file_name2+"_WaterFill"+str(height_water_fill)+"cm"      # !!WaterFill!!
+  
+image_file_name2 = image_file_name2+".ply"
 
 print '\n -- Writing ',num_triangles,' triangles to output file: '+image_file_name2+'\n'
 
@@ -178,10 +192,13 @@ ply.write('ply\n')
 ply.write('format ascii 1.0\n')
 ply.write('comment ** Geometry created by mammoreplicator.py using the input file: '+image_file_name+'\n')
 ply.write('comment      [Andreu Badal, 2015-02-03]\n')
+ply.write('comment \n')
 if (subtract_layer>0.00001):
   ply.write('comment NOTE: subtracting '+str(subtract_layer)+' cm from each column for easier printing.\n')
+  ply.write('comment \n')
 if (output_mm==1):
   ply.write('comment NOTE: vertex coordinates in mm.\n')
+  ply.write('comment \n')
   
 ply.write('comment    -- Input conversion parameters ('+time.strftime("%c")+')\n')
 ply.write('comment          compression_thickness    = ' +str(compression_thickness)+'\n')
@@ -200,23 +217,15 @@ ply.write('comment          output_base    = ' +str(output_base)+'\n')
 ply.write('comment          binned columns = ' +str(num_columns/output_binning)+", binned rows = "+str(num_rows/output_binning)+'\n')
 ply.write('comment \n')
 
+# - Report variables for the water fill:        !!WaterFill!!  
+if (min_height<50.0):
+  border_pixels = output_binning * int(border_cm/(pixel_size*output_binning) + 0.5)   # convert cm into pixels
+  pix_max=0.01; pix_max_water=0.0; i_max=0; j_max=0; pix_counter=0; volume_subtracted=0.0; volume_kept=0.0; overfill_warning=0
+  ply.write('comment     !!WaterFill!!\n')
+  ply.write('comment         height_water_fill = '+str(height_water_fill)+' cm, min_height = '+str(min_height)+' cm, border = '+str(border_cm)+' cm\n')   #!!WaterFill!!  
+  ply.write('comment         mfp_water = ' +str(mfp_water)+' cm\n')
+  ply.write('comment \n')
 
-
-# -- Input variables for the water fill:        !!WaterFill!!  
-height_water_fill = 4.3 # cm
-min_height = 4.5
-border_cm  = 0.4  # cm
-mfp_water  = 0.7675         # cm at 16.5 keV      
-
-border_pixels = output_binning * int(border_cm/(pixel_size*output_binning) + 0.5)   # convert cm into pixels
-pix_max=0.01; pix_max_water=0.0; i_max=0; j_max=0; pix_counter=0; volume_subtracted=0.0; volume_kept=0.0
-ply.write('comment     !!WaterFill!!\n')
-ply.write('comment         height_water_fill = '+str(height_water_fill)+' cm, min_height = '+str(min_height)+' cm, border = '+str(border_cm)+' cm\n')   #!!WaterFill!!  
-ply.write('comment         mfp_water = ' +str(mfp_water)+' cm\n')
-
-
-
-ply.write('comment \n')
 ply.write('element vertex '+str(num_vertices)+'\n')
 ply.write('property float x\n')
 ply.write('property float y\n')
@@ -261,27 +270,33 @@ for j in range(rows[0], rows[1], output_binning):
 
 
 
-
-
-      # - Create a container for water in the middle of the phantom. Water attenuates more than ABS!                 #!!WaterFill!!      
+#!!WaterFill!! 
+      # - Create a container for water in the middle of the phantom. Water attenuates more than ABS!       #!!WaterFill!!      
       if (pix[j][i] > min_height):   # Check minimum height
-        if (j>=rows[0]+border_pixels)&(i>=columns[0]+border_pixels)&(j<rows[1]-border_pixels)&(i<columns[1]-border_pixels):    # Check pixel interval
-          if (pix[j+border_pixels][i+border_pixels]>0.1):
-            if (pix[j-border_pixels][i+border_pixels]>0.1):
-              if (pix[j+border_pixels][i-border_pixels]>0.1):
-                if (pix[j-border_pixels][i-border_pixels]>0.1):   # Check if not in periphery
-                  # - Process internal pixels:                 
-                  pix_tmp = pix[j][i]
-                  pix[j][i] = ( height_water_fill/0.7675 - pix[j][i]/mfp_plastic ) / ( 1.0/mfp_water - 1.0/mfp_plastic )    # Compute new pixel plastic height assuming filled with water to height_water_fill   !!WaterFill!!
-                  
-                  pix_counter=pix_counter+1
-                  volume_subtracted=volume_subtracted+pix_tmp-pix[j][i]
-                  volume_kept=volume_kept+pix[j][i]
-                  if (pix_tmp>pix_max):
-                    pix_max = pix_tmp; pix_max_water = pix[j][i]; i_max = i; j_max = j   # Store thickest plastic pixel to report
-                    #print str(pix_tmp) + "->" + str(pix[j][i])  #!!DeBuG!!
+        if (j>=rows[0]+border_pixels) and (i>=columns[0]+border_pixels) and (j<rows[1]-border_pixels) and (i<columns[1]-border_pixels):    # Check pixel interval
+          if (pix[j+border_pixels][i+border_pixels]>0.1) and (pix[j-border_pixels][i+border_pixels]>0.1) and (pix[j+border_pixels][i-border_pixels]>0.1) and (pix[j-border_pixels][i-border_pixels]>0.1):   # Check if not in periphery
+            
+            # - Process internal pixels:
+            
+            #   Compute the effective water thickness at current pixel in the slanted path to the source:
+            d = source_coord-r0
+            norm = sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2])
+            height_water_fill_pixel = height_water_fill/source_height_Z*norm
+            #print '   height_water_fill='+str(height_water_fill)+', height_water_fill_pixel='+str(height_water_fill_pixel)
 
 
+            pix_tmp = pix[j][i]
+            pix[j][i] = ( height_water_fill_pixel/mfp_water - pix[j][i]/mfp_plastic ) / ( 1.0/mfp_water - 1.0/mfp_plastic )    # Compute new pixel plastic height assuming filled with water up to height_water_fill   !!WaterFill!!
+            
+            pix_counter+=1
+            volume_subtracted+=pix_tmp-pix[j][i]
+            volume_kept+=pix[j][i]
+            if (pix_tmp>pix_max):
+              pix_max=pix_tmp; pix_max_water=pix[j][i]; i_max=i; j_max=j   # Store thickest plastic pixel to report
+            if ((pix[j][i]<0.0) and (overfill_warning==0)):
+              overfill_warning=1
+ #!!WaterFill!! 
+ 
 
       d = source_coord-vertices[0]    # 4 vertices at the top focused to the source: calculate mormalized direction vector for each vertex
       norm = sqrt(d[0]*d[0]+d[1]*d[1]+d[2]*d[2])    # !!PYPY!! Not using function: numpypy.linalg.norm(d)
@@ -313,11 +328,11 @@ if(pix_max>0.02):
   print "\n!!WaterFill!!  Input:  height_water_fill="+str(height_water_fill)+", min_height=" + str(min_height) + ", border_pixels=" + str(border_pixels) + ", mfp_water=" + str(mfp_water)  + ", mfp_plastic=" + str(mfp_plastic)
   print "               Number pixels transformed = "+str(pix_counter)+" = "+str(pix_counter*pixel_area)+" cm^2. Plastic volume = "+str(volume_kept*pixel_area)+", Water volume = "+str((height_water_fill*pix_counter-volume_kept)*pixel_area)+", Volume saved = "+str(volume_subtracted*pixel_area)+" cm^3"
   print "               Original plastic pix_max = "+str(pix_max)+" cm, plastic thickness with water = pix["+str(j_max)+"]["+str(i_max)+"] = "+str(pix[j_max][i_max])
-  print "               exp(-pix_max/mfp_plastic) = "+str(exp(-pix_max/mfp_plastic))+", exp(-pix/mfp_plastic-(height_water_fill-pix)/mfp_water)="+str(exp(-pix[j_max][i_max]/mfp_plastic-(height_water_fill-pix[j_max][i_max])/mfp_water))
-  
-  if(pix[j_max][i_max]<0):
-    print "\n***WARNING*** The water subtraction failed: input plast/water thicknesses not posible.   !!WaterFill!!\n\n"
-  
+  print "               exp(-pix_max/mfp_plastic) = "+str(exp(-pix_max/mfp_plastic))+", exp(-pix/mfp_plastic-(height_water_fill-pix)/mfp_water)="+str(exp(-pix[j_max][i_max]/mfp_plastic-(height_water_fill-pix[j_max][i_max])/mfp_water))  
+  print "               (exponentials differ bc pixel water thickness >= height_water_fill: we account for slanted path to source)"  
+  if(pix[j_max][i_max]<0) or (overfill_warning!=0):
+    print "\n***WARNING*** The water subtraction failed! Input plastic/water thicknesses combination not valid (results in negative water thickness).   !!WaterFill!!\n\n"
+#!!WaterFill!! 
 
 
 # Write triangles in the 6 sides of each printed column giving groups of 3 vertices:
@@ -360,5 +375,6 @@ for n in range(0, num_binned_pixels):
     #ply.write('3 '+str(2+n*8)+' '+str(6+n*8)+' '+str(7+n*8)+'\n')      #  No need to build this wall, already written in past column
     #ply.write('3 '+str(7+n*8)+' '+str(3+n*8)+' '+str(2+n*8)+'\n')
   
-ply.write(str(n)+'\n')
+# ply.write(str(n)+'\n')   # !!DeBuG!! Why writing str(n)?? Error?
+ply.write('\n')
 ply.close()
