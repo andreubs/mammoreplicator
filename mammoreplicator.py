@@ -41,7 +41,7 @@ compression_thickness    = 6.0    # cm
 average_breast_intensity = 1400
 air_intensity            = 16383     # Pixel value outside the breast (air attenuation only)      Matthew Clark 
 
-output_binning = 5               # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
+output_binning = 5              # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
 subtract_layer = 0.0 # cm
 output_dcm = 0     # 1==true, 0==false->do not output dicom file with thickness
 output_mm  = 1     # 1==true, 0==false->output triangles in cm
@@ -77,17 +77,12 @@ center_pixel    = numpypy.array([0,0])   #([num_columns/2,num_rows])      # Loca
 center_coord    = numpypy.array([0.0, 0.0, 0.0])  # Location x-ray field of view center in cm (printed phantom origin)
 source_coord    = numpypy.array([0.0, (rows[0]+(rows[1]-rows[0])*0.5)*pixel_size, source_height_Z])  # Location x-ray source focal spot. Using NUMPY arrays for calculations.
 
-air_threshold   = 0   #!!DeBuG!! Currently not removing air pixels: drawing 0 height columns instead       # Any pixel below this threshold will be considered air and asigned 0 thickness    
-
-
 print "\n -- Input conversion parameters ("+time.strftime("%c")+"):"
 print "      compression_thickness    =", compression_thickness
 print "      average_breast_intensity =", average_breast_intensity
 print "      air_intensity            =", air_intensity
 print "      columns=["+str(columns[0])+","+str(columns[1])+"], num_columns = ", num_columns
 print "         rows=["+str(rows[0])+","+str(rows[1])+"], num_rows = ", num_rows
-#print "      max_pixel_value =", max_pixel_value
-#print "      air_threshold   =", air_threshold
 print "      mfp_breast      =", mfp_breast
 print "      mfp_plastic     =", mfp_plastic
 print "      center_pixel    =", center_pixel
@@ -110,7 +105,7 @@ mammo = dicom.read_file(image_file_name)
 print '\n Processing pixel values; rows = ',num_rows,', columns = ',num_columns,'...'
 sys.stdout.write(' Current row: ');               # Used instead of print bc no new line added after text
 pix = numpypy.zeros((rows[1], columns[1]))        # We will work on this copy of the data as floats, init to 0
-num_air_pix = 0
+
 
 conversion_factor = (compression_thickness/log(float(average_breast_intensity/float(air_intensity)))) * (mfp_plastic/mfp_breast) 
 # Test1:    conversion_factor = (compression_thickness*log(float(average_breast_intensity))) * (mfp_plastic/mfp_breast)           #   Matthew Clark operation change 7/15/2015
@@ -129,22 +124,17 @@ for j in range(rows[0], rows[1], output_binning):
           avg = avg + float(mammo.pixel_array[j+k1][i+k2])
       mammo.pixel_array[j][i] = int(round(avg/(output_binning**2)))
   
-    # Skip air pixels (leave them as 0 thickness):
-    if mammo.pixel_array[j][i]<air_threshold:
-      num_air_pix = num_air_pix + 1
+    
+    if (mammo.pixel_array[j][i]>1):
+
+      # Conversion for raw mammograms "for processing":
+      pix[j][i] = conversion_factor * log(float(mammo.pixel_array[j][i])/float(air_intensity))    # Inverted operation: assuming air value = incident intensity (Matt Clark)
+      
+      # Conversion for post-processed mammograms "for presentation": 
+      #pix[j][i] = log(float(mammo.pixel_array[j][i])) * conversion_factor  
+      
+    else:
       pix[j][i] = 0
-    else:  
-
-      if (mammo.pixel_array[j][i]>1):
-
-        # Conversion for raw mammograms "for processing":
-        pix[j][i] = conversion_factor * log(float(mammo.pixel_array[j][i])/float(air_intensity))    # Inverted operation: assuming air value = incident intensity (Matt Clark)
-        
-        # Conversion for post-processed mammograms "for presentation": 
-        #pix[j][i] = log(float(mammo.pixel_array[j][i])) * conversion_factor  
-        
-      else:
-        pix[j][i] = 0
 
     if (output_dcm==1):  
       bin_value = int(round(pix[j][i]*100))        # Convert cm floats into tenths of mm integers to store in dicom image
@@ -163,8 +153,8 @@ if (output_dcm==1):
 
 
 # Generate triangle mesh:
-print '\n Generating the output triangle mesh focused to the x-ray source focal spot (num_air_pix='+str(num_air_pix)+')...'
-num_binned_pixels = (num_columns/output_binning) * (num_rows/output_binning) - num_air_pix
+print '\n Generating the output triangle mesh focused to the x-ray source focal spot...'
+num_binned_pixels = (num_columns/output_binning) * (num_rows/output_binning)
 num_vertices  = num_binned_pixels * 8     #  8 vertices per printed column  
 
 if (output_base==1):
@@ -173,7 +163,7 @@ else:
   num_triangles = num_binned_pixels * 6 + 2*(num_rows/output_binning) + 2*(num_columns/output_binning)
 
   
-image_file_name2 = image_file_name+"_RawData_bin"+str(output_binning)+"_focusedZ"+str(source_coord[2])
+image_file_name2 = image_file_name+"_bin"+str(output_binning)+"_focusedZ"+str(source_coord[2])
 if (subtract_layer>0.00001):
   image_file_name2 = image_file_name2+"_-"+str(subtract_layer)+"cm"
 if (output_mm==1):
@@ -185,6 +175,9 @@ if (min_height<50.0):
 image_file_name2 = image_file_name2+".ply"
 
 print '\n -- Writing ',num_triangles,' triangles to output file: '+image_file_name2+'\n'
+
+empty_pixels = numpypy.zeros(num_binned_pixels)    # Define a vector to detect empty pixels
+pixel_index=0; empty_pixel_counter=0
 
 ply = open(image_file_name2, 'w')  # Create PLY file and write header:
 
@@ -318,9 +311,17 @@ for j in range(rows[0], rows[1], output_binning):
           ply.write(str(10.0*vertices[n][0])+' '+str(10.0*vertices[n][1])+' '+str(10.0*vertices[n][2])+'\n')  # Outputing mesh in mm
         else:
           ply.write(str(vertices[n][0])+' '+str(vertices[n][1])+' '+str(vertices[n][2])+'\n')                 # Outputing mesh in cm
+
+
+      # Mark empty pixels (vertices will be written but not faces):
+      if (abs(pix[j][i])<0.01):
+        empty_pixels[pixel_index]=1
+        empty_pixel_counter+=1
+      pixel_index+=1
     
 sys.stdout.write('\n'); sys.stdout.flush()
 
+print "\n Number of empty binned pixels surrounding the object: "+str(empty_pixel_counter)+". These triangles will be drawn overlapping at origin (fix mesh!)."
 
 # -- Report info on water fill:           !!WaterFill!!
 if(pix_max>0.02):
@@ -338,42 +339,74 @@ if(pix_max>0.02):
 # Write triangles in the 6 sides of each printed column giving groups of 3 vertices:
 for n in range(0, num_binned_pixels):
 
-  # - Create a triangle mesh combining the walls of the columns of consecutive pixels:
-  
-  if (output_base==1):
-    ply.write('3 '+str(0+n*8)+' '+str(1+n*8)+' '+str(2+n*8)+'\n')
-    ply.write('3 '+str(2+n*8)+' '+str(3+n*8)+' '+str(0+n*8)+'\n')     #  3 ----- 0   (vertex order clockwise)    
-  ply.write('3 '+str(4+n*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')       #    - c -
-  ply.write('3 '+str(6+n*8)+' '+str(7+n*8)+' '+str(4+n*8)+'\n')       #  2 ----- 1
-  
-  if (n<(num_columns/output_binning)):                                #  7 ----- 4
-    ply.write('3 '+str(1+n*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')     #    -top-
-    ply.write('3 '+str(6+n*8)+' '+str(2+n*8)+' '+str(1+n*8)+'\n')     #  6 ----- 5
+
+  if (empty_pixels[n]!=1):    # Pixels not empty
+
+    # - Create a triangle mesh combining the walls of the columns of consecutive pixels:  
+    if (output_base==1):
+      ply.write('3 '+str(0+n*8)+' '+str(1+n*8)+' '+str(2+n*8)+'\n')
+      ply.write('3 '+str(2+n*8)+' '+str(3+n*8)+' '+str(0+n*8)+'\n')     #  3 ----- 0   (vertex order clockwise)    
+    ply.write('3 '+str(4+n*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')       #    - c -
+    ply.write('3 '+str(6+n*8)+' '+str(7+n*8)+' '+str(4+n*8)+'\n')       #  2 ----- 1
     
-  elif (n>(num_binned_pixels-(num_columns/output_binning)-1)):
-    ply.write('3 '+str(1+n*8+3-(num_columns/output_binning)*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')
-    ply.write('3 '+str(6+n*8)+' '+str(2+n*8+5-(num_columns/output_binning)*8)+' '+str(1+n*8+3-(num_columns/output_binning)*8)+'\n')
-    ply.write('3 '+str(3+n*8)+' '+str(7+n*8)+' '+str(4+n*8)+'\n')
-    ply.write('3 '+str(4+n*8)+' '+str(0+n*8)+' '+str(3+n*8)+'\n')
-  else:
-    ply.write('3 '+str(1+n*8+3-(num_columns/output_binning)*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')
-    ply.write('3 '+str(6+n*8)+' '+str(2+n*8+5-(num_columns/output_binning)*8)+' '+str(1+n*8+3-(num_columns/output_binning)*8)+'\n')
-    #ply.write('3 '+str(3+n*8)+' '+str(7+n*8)+' '+str(4+n*8)+'\n')      #  No need to build this wall, already written in past column
-    #ply.write('3 '+str(4+n*8)+' '+str(0+n*8)+' '+str(3+n*8)+'\n')  
-  
-  if ((n+1)%(num_columns/output_binning))==0:   #!!ReducedTriangles!!    
-    ply.write('3 '+str(0+n*8)+' '+str(4+n*8)+' '+str(5+n*8)+'\n')
-    ply.write('3 '+str(5+n*8)+' '+str(1+n*8)+' '+str(0+n*8)+'\n')
-  elif (n%(num_columns/output_binning))==0:       #!!ReducedTriangles!!     
-    ply.write('3 '+str(0+n*8+7+8)+' '+str(4+n*8)+' '+str(5+n*8)+'\n')
-    ply.write('3 '+str(5+n*8)+' '+str(1+n*8+5+8)+' '+str(0+n*8+7+8)+'\n')
-    ply.write('3 '+str(2+n*8)+' '+str(6+n*8)+' '+str(7+n*8)+'\n')
-    ply.write('3 '+str(7+n*8)+' '+str(3+n*8)+' '+str(2+n*8)+'\n')
-  else:    
-    ply.write('3 '+str(0+n*8+7+8)+' '+str(4+n*8)+' '+str(5+n*8)+'\n')   # Connect top right with top left next column (7)   #!!ReducedTriangles!!
-    ply.write('3 '+str(5+n*8)+' '+str(1+n*8+5+8)+' '+str(0+n*8+7+8)+'\n')
-    #ply.write('3 '+str(2+n*8)+' '+str(6+n*8)+' '+str(7+n*8)+'\n')      #  No need to build this wall, already written in past column
-    #ply.write('3 '+str(7+n*8)+' '+str(3+n*8)+' '+str(2+n*8)+'\n')
+    if (n<(num_columns/output_binning)):                                #  7 ----- 4
+      ply.write('3 '+str(1+n*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')     #    -top-
+      ply.write('3 '+str(6+n*8)+' '+str(2+n*8)+' '+str(1+n*8)+'\n')     #  6 ----- 5
+      
+    elif (n>(num_binned_pixels-(num_columns/output_binning)-1)):
+      ply.write('3 '+str(1+n*8+3-(num_columns/output_binning)*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')
+      ply.write('3 '+str(6+n*8)+' '+str(2+n*8+5-(num_columns/output_binning)*8)+' '+str(1+n*8+3-(num_columns/output_binning)*8)+'\n')
+      ply.write('3 '+str(3+n*8)+' '+str(7+n*8)+' '+str(4+n*8)+'\n')
+      ply.write('3 '+str(4+n*8)+' '+str(0+n*8)+' '+str(3+n*8)+'\n')
+    else:
+      ply.write('3 '+str(1+n*8+3-(num_columns/output_binning)*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')
+      ply.write('3 '+str(6+n*8)+' '+str(2+n*8+5-(num_columns/output_binning)*8)+' '+str(1+n*8+3-(num_columns/output_binning)*8)+'\n')
+      #ply.write('3 '+str(3+n*8)+' '+str(7+n*8)+' '+str(4+n*8)+'\n')      #  No need to build this wall, already written in past column
+      #ply.write('3 '+str(4+n*8)+' '+str(0+n*8)+' '+str(3+n*8)+'\n')  
+    
+    if ((n+1)%(num_columns/output_binning))==0:   #!!ReducedTriangles!!    
+      ply.write('3 '+str(0+n*8)+' '+str(4+n*8)+' '+str(5+n*8)+'\n')
+      ply.write('3 '+str(5+n*8)+' '+str(1+n*8)+' '+str(0+n*8)+'\n')
+    elif (n%(num_columns/output_binning))==0:       #!!ReducedTriangles!!     
+      ply.write('3 '+str(0+n*8+7+8)+' '+str(4+n*8)+' '+str(5+n*8)+'\n')
+      ply.write('3 '+str(5+n*8)+' '+str(1+n*8+5+8)+' '+str(0+n*8+7+8)+'\n')
+      ply.write('3 '+str(2+n*8)+' '+str(6+n*8)+' '+str(7+n*8)+'\n')
+      ply.write('3 '+str(7+n*8)+' '+str(3+n*8)+' '+str(2+n*8)+'\n')
+    else:    
+      ply.write('3 '+str(0+n*8+7+8)+' '+str(4+n*8)+' '+str(5+n*8)+'\n')   # Connect top right with top left next column (7)   #!!ReducedTriangles!!
+      ply.write('3 '+str(5+n*8)+' '+str(1+n*8+5+8)+' '+str(0+n*8+7+8)+'\n')
+      #ply.write('3 '+str(2+n*8)+' '+str(6+n*8)+' '+str(7+n*8)+'\n')      #  No need to build this wall, already written in past column
+      #ply.write('3 '+str(7+n*8)+' '+str(3+n*8)+' '+str(2+n*8)+'\n')
+    
+    
+  else:   # empty_pixels==0 --> Skip empty pixels: unnecessary pixels in the base outside the object will be overlapping at the origin. 
+    if (output_base==1):
+      ply.write('3 1 1 1\n')
+      ply.write('3 1 1 1\n')
+    ply.write('3 1 1 1\n')
+    ply.write('3 1 1 1\n')      
+    if (n<(num_columns/output_binning)):
+      ply.write('3 '+str(1+n*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')
+      ply.write('3 '+str(6+n*8)+' '+str(2+n*8)+' '+str(1+n*8)+'\n')
+    elif (n>(num_binned_pixels-(num_columns/output_binning)-1)):
+      ply.write('3 '+str(1+n*8+3-(num_columns/output_binning)*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')
+      ply.write('3 '+str(6+n*8)+' '+str(2+n*8+5-(num_columns/output_binning)*8)+' '+str(1+n*8+3-(num_columns/output_binning)*8)+'\n')
+      ply.write('3 '+str(3+n*8)+' '+str(7+n*8)+' '+str(4+n*8)+'\n')
+      ply.write('3 '+str(4+n*8)+' '+str(0+n*8)+' '+str(3+n*8)+'\n')
+    else:
+      ply.write('3 '+str(1+n*8+3-(num_columns/output_binning)*8)+' '+str(5+n*8)+' '+str(6+n*8)+'\n')
+      ply.write('3 '+str(6+n*8)+' '+str(2+n*8+5-(num_columns/output_binning)*8)+' '+str(1+n*8+3-(num_columns/output_binning)*8)+'\n')
+    if ((n+1)%(num_columns/output_binning))==0:
+      ply.write('3 '+str(0+n*8)+' '+str(4+n*8)+' '+str(5+n*8)+'\n')
+      ply.write('3 '+str(5+n*8)+' '+str(1+n*8)+' '+str(0+n*8)+'\n')
+    elif (n%(num_columns/output_binning))==0:
+      ply.write('3 '+str(0+n*8+7+8)+' '+str(4+n*8)+' '+str(5+n*8)+'\n')
+      ply.write('3 '+str(5+n*8)+' '+str(1+n*8+5+8)+' '+str(0+n*8+7+8)+'\n')
+      ply.write('3 '+str(2+n*8)+' '+str(6+n*8)+' '+str(7+n*8)+'\n')
+      ply.write('3 '+str(7+n*8)+' '+str(3+n*8)+' '+str(2+n*8)+'\n')
+    else:
+      ply.write('3 1 1 1\n')
+      ply.write('3 1 1 1\n')
   
 # ply.write(str(n)+'\n')   # !!DeBuG!! Why writing str(n)?? Error?
 ply.write('\n')
