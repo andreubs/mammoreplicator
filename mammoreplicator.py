@@ -211,6 +211,7 @@ ply.write('comment          binned columns = ' +str(num_columns/output_binning)+
 ply.write('comment \n')
 
 # - Report variables for the water fill:        !!WaterFill!!  
+volume_kept_outside=0.0;
 if (min_height<50.0):
   border_pixels = output_binning * int(border_cm/(pixel_size*output_binning) + 0.5)   # convert cm into pixels
   pix_max=0.01; pix_max_water=0.0; i_max=0; j_max=0; pix_counter=0; volume_subtracted=0.0; volume_kept=0.0; overfill_warning=0
@@ -288,6 +289,8 @@ for j in range(rows[0], rows[1], output_binning):
               pix_max=pix_tmp; pix_max_water=pix[j][i]; i_max=i; j_max=j   # Store thickest plastic pixel to report
             if ((pix[j][i]<0.0) and (overfill_warning==0)):
               overfill_warning=1
+      else:
+        volume_kept_outside+=pix[j][i]
  #!!WaterFill!! 
  
 
@@ -327,12 +330,14 @@ print "\n Number of empty binned pixels surrounding the object: "+str(empty_pixe
 if(pix_max>0.02):
   pixel_area=(pixel_size*output_binning)*(pixel_size*output_binning)
   print "\n!!WaterFill!!  Input:  height_water_fill="+str(height_water_fill)+", min_height=" + str(min_height) + ", border_pixels=" + str(border_pixels) + ", mfp_water=" + str(mfp_water)  + ", mfp_plastic=" + str(mfp_plastic)
-  print "               Number pixels transformed = "+str(pix_counter)+" = "+str(pix_counter*pixel_area)+" cm^2. Plastic volume = "+str(volume_kept*pixel_area)+", Water volume = "+str((height_water_fill*pix_counter-volume_kept)*pixel_area)+", Volume saved = "+str(volume_subtracted*pixel_area)+" cm^3"
+  print "               Number pixels transformed = "+str(pix_counter)+" = "+str(pix_counter*pixel_area)+" cm^2. Plastic volume = "+str((volume_kept+volume_kept_outside)*pixel_area)+", Water volume = "+str((height_water_fill*pix_counter-volume_kept)*pixel_area)+", Volume saved = "+str(volume_subtracted*pixel_area)+" cm^3"
   print "               Original plastic pix_max = "+str(pix_max)+" cm, plastic thickness with water = pix["+str(j_max)+"]["+str(i_max)+"] = "+str(pix[j_max][i_max])
   print "               exp(-pix_max/mfp_plastic) = "+str(exp(-pix_max/mfp_plastic))+", exp(-pix/mfp_plastic-(height_water_fill-pix)/mfp_water)="+str(exp(-pix[j_max][i_max]/mfp_plastic-(height_water_fill-pix[j_max][i_max])/mfp_water))  
   print "               (exponentials differ bc pixel water thickness >= height_water_fill: we account for slanted path to source)"  
   if(pix[j_max][i_max]<0) or (overfill_warning!=0):
     print "\n***WARNING*** The water subtraction failed! Input plastic/water thicknesses combination not valid (results in negative water thickness).   !!WaterFill!!\n\n"
+else:
+  print "               Total plastic volume = "+str(volume_kept_outside*pixel_area)+" cm^3"
 #!!WaterFill!! 
 
 
