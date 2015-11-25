@@ -41,8 +41,9 @@ compression_thickness    = 6.0    # cm
 average_breast_intensity = 1400
 air_intensity            = 16383     # Pixel value outside the breast (air attenuation only)      Matthew Clark 
 
-output_binning = 5              # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
-subtract_layer = 0.0 # cm
+output_binning = 4              # Rebin the pixels to reduce the print resolution (1=no-binning, 2=average_4pixels...)
+subtract_layer = 2.0 # cm
+
 output_dcm = 0     # 1==true, 0==false->do not output dicom file with thickness
 output_mm  = 1     # 1==true, 0==false->output triangles in cm
 output_base= 1     # 1==true, 0==false->add a flat support at the base of the object to define a solid object, or output just an empty 2D shell
@@ -50,10 +51,10 @@ output_base= 1     # 1==true, 0==false->add a flat support at the base of the ob
 rows       = [0,2294] 
 columns    = [0, 800]    # [0,1914]  
 
-pixel_size      = 0.0100  # cm  Real pixel size: 0.00941 cm     # Desired pixel size in the printed phantom
-mfp_breast      = 1.284   # cm     # 16.5keV=1.284cm, 20keV=1.933cm;      // Molybdenum target, 28 kVp -> average energy 16.5 keV
-mfp_plastic     = 1.429   # cm  = 1/0.7 -> Approx ABS MFP at 16.5keV
-  #mfp_plastic = 1.0  # cm -> Approx SLA polymer MFP
+pixel_size = 0.00941 # 0.0100  # cm  Real pixel size: 0.00941 cm     # Desired pixel size in the printed phantom
+mfp_breast = 1.284   # cm     # 16.5keV=1.284cm, 20keV=1.933cm;      // Molybdenum target, 28 kVp -> average energy 16.5 keV
+# mfp_plastic     = 1.429   # cm  = 1/0.7 -> Approx ABS MFP at 16.5keV
+mfp_plastic = 1.074  # cm -> Approx SLA polymer MFP
   #mfp_plastic = (1.0/21.47) # cm  <-- Aluminum, 15 keV; attenuation coeff. http://physics.nist.gov/PhysRefData/XrayMassCoef/ElemTab/z13.html (density=2.699g/cm3)
   #mfp_plastic = 0.863  # cm     # 16.5keV=0.863cm, 20keV=1.315cm
   
@@ -62,9 +63,9 @@ source_height_Z = 66.0   # cm
 
 # -- Input variables for the water fill:        !!WaterFill!!  
 #    If "min_height>50" water fill is completely disabled.
-min_height = 4.5        # cm
-height_water_fill = 4.3 # cm
-border_cm  = 0.4        # cm
+min_height = 9993.65 # 4.5        # cm
+height_water_fill = 3.55 # 4.3 # cm
+border_cm  = 0.3        # cm
 mfp_water  = 0.7675     # cm at 16.5 keV      
   
 
@@ -211,10 +212,10 @@ ply.write('comment          binned columns = ' +str(num_columns/output_binning)+
 ply.write('comment \n')
 
 # - Report variables for the water fill:        !!WaterFill!!  
-volume_kept_outside=0.0;
+volume_kept_outside=0.0; pix_max=0.01
 if (min_height<50.0):
   border_pixels = output_binning * int(border_cm/(pixel_size*output_binning) + 0.5)   # convert cm into pixels
-  pix_max=0.01; pix_max_water=0.0; i_max=0; j_max=0; pix_counter=0; volume_subtracted=0.0; volume_kept=0.0; overfill_warning=0
+  pix_max_water=0.0; i_max=0; j_max=0; pix_counter=0; volume_subtracted=0.0; volume_kept=0.0; overfill_warning=0
   ply.write('comment     !!WaterFill!!\n')
   ply.write('comment         height_water_fill = '+str(height_water_fill)+' cm, min_height = '+str(min_height)+' cm, border = '+str(border_cm)+' cm\n')   #!!WaterFill!!  
   ply.write('comment         mfp_water = ' +str(mfp_water)+' cm\n')
@@ -282,6 +283,9 @@ for j in range(rows[0], rows[1], output_binning):
             pix_tmp = pix[j][i]
             pix[j][i] = ( height_water_fill_pixel/mfp_water - pix[j][i]/mfp_plastic ) / ( 1.0/mfp_water - 1.0/mfp_plastic )    # Compute new pixel plastic height assuming filled with water up to height_water_fill   !!WaterFill!!
             
+#             #!!DeBuG!! Attempt to Water-Air combination
+#             pix[j][i] = height_water_fill_pixel - pix[j][i]*mfp_water/mfp_plastic  # Water-Air combination
+            
             pix_counter+=1
             volume_subtracted+=pix_tmp-pix[j][i]
             volume_kept+=pix[j][i]
@@ -324,11 +328,20 @@ for j in range(rows[0], rows[1], output_binning):
     
 sys.stdout.write('\n'); sys.stdout.flush()
 
-print "\n Number of empty binned pixels surrounding the object: "+str(empty_pixel_counter)+". These triangles will be drawn overlapping at origin (fix mesh!)."
+print "\n Number of empty binned pixels surrounding the object: "+str(empty_pixel_counter)+". These pixels will be defined as zero-area triangles and need to be cleaned in mesh post-processing."
+
+# Cleaning process with MeshLab: 
+#   Filters -> Cleaning -> Remove zero area faces
+#   Filters -> Cleaning -> Remove unreferenced vertices
+#     (optional filters:)
+#   Filters -> Cleaning -> Merge Close Vertices
+#   Filters -> Normals -> Re-orient all faces coherently
+#   File -> Export mesh as STL
+
 
 # -- Report info on water fill:           !!WaterFill!!
+pixel_area=(pixel_size*output_binning)*(pixel_size*output_binning)
 if(pix_max>0.02):
-  pixel_area=(pixel_size*output_binning)*(pixel_size*output_binning)
   print "\n!!WaterFill!!  Input:  height_water_fill="+str(height_water_fill)+", min_height=" + str(min_height) + ", border_pixels=" + str(border_pixels) + ", mfp_water=" + str(mfp_water)  + ", mfp_plastic=" + str(mfp_plastic)
   print "               Number pixels transformed = "+str(pix_counter)+" = "+str(pix_counter*pixel_area)+" cm^2. Plastic volume = "+str((volume_kept+volume_kept_outside)*pixel_area)+", Water volume = "+str((height_water_fill*pix_counter-volume_kept)*pixel_area)+", Volume saved = "+str(volume_subtracted*pixel_area)+" cm^3"
   print "               Original plastic pix_max = "+str(pix_max)+" cm, plastic thickness with water = pix["+str(j_max)+"]["+str(i_max)+"] = "+str(pix[j_max][i_max])
@@ -337,7 +350,7 @@ if(pix_max>0.02):
   if(pix[j_max][i_max]<0) or (overfill_warning!=0):
     print "\n***WARNING*** The water subtraction failed! Input plastic/water thicknesses combination not valid (results in negative water thickness).   !!WaterFill!!\n\n"
 else:
-  print "               Total plastic volume = "+str(volume_kept_outside*pixel_area)+" cm^3"
+  print "\n Total plastic volume = "+str(volume_kept_outside*pixel_area)+" cm^3"
 #!!WaterFill!! 
 
 
